@@ -34,10 +34,7 @@ pub unsafe extern "C" fn verify_agg_proof(proof: *const c_char) -> c_char {
     let proof_vec = c_char_to_vec(proof);
     let agg_proof = serde_json::from_slice::<AggCircuitProof>(proof_vec.as_slice()).unwrap();
     let verified = panic::catch_unwind(|| {
-        VERIFIER
-            .unwrap()
-            .verify_agg_circuit_proof(agg_proof)
-            .is_ok()
+        panic!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
     });
     verified.unwrap_or(false) as c_char
 }
