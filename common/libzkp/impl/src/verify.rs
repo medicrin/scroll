@@ -36,5 +36,6 @@ pub unsafe extern "C" fn verify_agg_proof(proof: *const c_char) -> c_char {
     let verified = panic::catch_unwind(|| {
         panic!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
     });
+    log::info!("panic");
     verified.unwrap_or(false) as c_char
 }
