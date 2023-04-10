@@ -496,9 +496,10 @@ func (r *Layer2Relayer) ProcessCommittedBatches() {
 			"block_status", status,
 		)
 	}
+
 }
 
-func (r *Layer2Relayer) handleConfirmation(confirmation *sender.Confirmation) {
+...func (r *Layer2Relayer) handleConfirmation(confirmation *sender.Confirmation) {
 	transactionType := "Unknown"
 	// check whether it is message relay transaction
 	if msgHash, ok := r.processingMessage.Load(confirmation.ID); ok {
