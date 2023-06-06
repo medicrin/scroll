@@ -13,8 +13,8 @@ halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "scr
 poseidon = { git = "https://github.com/scroll-tech/poseidon.git", branch = "scroll-dev-0220" }
 
 [dependencies]
-zkevm = { git = "https://github.com/scroll-tech/scroll-zkevm", rev="9283ede31ee84aafa729693a10726fffe0a7a03d" }
-types = { git = "https://github.com/scroll-tech/scroll-zkevm", rev="9283ede31ee84aafa729693a10726fffe0a7a03d" }
+zkevm = { git = "https://github.com/scroll-tech/scroll-zkevm", tag = "v0.3.0-hotfix1" }
+types = { git = "https://github.com/scroll-tech/scroll-zkevm", tag = "v0.3.0-hotfix1" }
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2022_09_10" }
 
 log = "0.4"
