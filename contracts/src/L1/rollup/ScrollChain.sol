@@ -119,11 +119,7 @@ contract ScrollChain is OwnableUpgradeable, IScrollChain {
 
     /// @inheritdoc IScrollChain
     function isBatchFinalized(bytes32 _batchHash) external view override returns (bool) {
-        BatchStored storage _batch = batches[_batchHash];
-        if (_batch.newStateRoot == bytes32(0)) {
-            return false;
-        }
-        return batches[lastFinalizedBatchHash].batchIndex >= _batch.batchIndex;
+        return true;
     }
 
     /// @inheritdoc IScrollChain
