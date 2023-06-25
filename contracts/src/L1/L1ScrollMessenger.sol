@@ -10,7 +10,6 @@ import {IL1ScrollMessenger} from "./IL1ScrollMessenger.sol";
 import {ScrollConstants} from "../libraries/constants/ScrollConstants.sol";
 import {IScrollMessenger} from "../libraries/IScrollMessenger.sol";
 import {ScrollMessengerBase} from "../libraries/ScrollMessengerBase.sol";
-import {AddressAliasHelper} from "../libraries/common/AddressAliasHelper.sol";
 import {WithdrawTrieVerifier} from "../libraries/verifier/WithdrawTrieVerifier.sol";
 
 // solhint-disable avoid-low-level-calls
@@ -30,6 +29,9 @@ contract L1ScrollMessenger is PausableUpgradeable, ScrollMessengerBase, IL1Scrol
      * Variables *
      *************/
 
+    /// @notice Mapping from relay id to relay status.
+    mapping(bytes32 => bool) public isL1MessageRelayed;
+
     /// @notice Mapping from L1 message hash to sent status.
     mapping(bytes32 => bool) public isL1MessageSent;
 
@@ -41,6 +43,28 @@ contract L1ScrollMessenger is PausableUpgradeable, ScrollMessengerBase, IL1Scrol
 
     /// @notice The address of L1MessageQueue contract.
     address public messageQueue;
+
+    // @note move to ScrollMessengerBase in next big refactor
+    /// @dev The status of for non-reentrant check.
+    uint256 private _lock_status;
+
+    /**********************
+     * Function Modifiers *
+     **********************/
+
+    modifier nonReentrant() override{ 
+        // On the first call to nonReentrant, _notEntered will be true
+        require(_lock_status != _ENTERED, "ReentrancyGuard: reentrant call");
+
+        // Any calls to nonReentrant after this point will fail
+        _lock_status = _ENTERED;
+
+        _;
+
+        // By storing the original value once again, a refund is triggered (see
+        // https://eips.ethereum.org/EIPS/eip-2200)
+        _lock_status = _NOT_ENTERED;
+    }
 
     /***************
      * Constructor *
@@ -111,15 +135,18 @@ contract L1ScrollMessenger is PausableUpgradeable, ScrollMessengerBase, IL1Scrol
 
         {
             address _rollup = rollup;
-            require(IScrollChain(_rollup).isBatchFinalized(_proof.batchIndex), "Batch is not finalized");
-            bytes32 _messageRoot = IScrollChain(_rollup).withdrawRoots(_proof.batchIndex);
-            require(
-                WithdrawTrieVerifier.verifyMerkleProof(_messageRoot, _xDomainCalldataHash, _nonce, _proof.merkleProof),
-                "Invalid proof"
-            );
+            require(IScrollChain(_rollup).isBatchFinalized(_proof.batchHash), "Batch is not finalized");
+            // @note skip verify for now
+            
+        bytes32 _messageRoot = IScrollChain(_rollup).getL2MessageRoot(_proof.batchHash);
+        require(
+            WithdrawTrieVerifier.verifyMerkleProof(_messageRoot, _xDomainCalldataHash, _nonce, _proof.merkleProof),
+            "Invalid proof"
+        );
+      
         }
 
-        // @note check more `_to` address to avoid attack in the future when we add more gateways.
+        // @todo check more `_to` address to avoid attack.
         require(_to != messageQueue, "Forbid to call message queue");
         require(_to != address(this), "Forbid to call self");
 
@@ -137,6 +164,9 @@ contract L1ScrollMessenger is PausableUpgradeable, ScrollMessengerBase, IL1Scrol
         } else {
             emit FailedRelayedMessage(_xDomainCalldataHash);
         }
+
+        bytes32 _relayId = keccak256(abi.encodePacked(_xDomainCalldataHash, msg.sender, block.number));
+        isL1MessageRelayed[_relayId] = true;
     }
 
     /// @inheritdoc IL1ScrollMessenger
@@ -146,41 +176,10 @@ contract L1ScrollMessenger is PausableUpgradeable, ScrollMessengerBase, IL1Scrol
         uint256 _value,
         uint256 _queueIndex,
         bytes memory _message,
-        uint32 _newGasLimit,
-        address _refundAddress
-    ) external payable override whenNotPaused {
-        // We will use a different `queueIndex` for the replaced message. However, the original `queueIndex` or `nonce`
-        // is encoded in the `_message`. We will check the `xDomainCalldata` in layer 2 to avoid duplicated execution.
-        // So, only one message will succeed in layer 2. If one of the message is executed successfully, the other one
-        // will revert with "Message was already successfully executed".
-        address _messageQueue = messageQueue;
-        address _counterpart = counterpart;
-        bytes memory _xDomainCalldata = _encodeXDomainCalldata(_from, _to, _value, _queueIndex, _message);
-        bytes32 _xDomainCalldataHash = keccak256(_xDomainCalldata);
-
-        require(isL1MessageSent[_xDomainCalldataHash], "Provided message has not been enqueued");
-
-        // compute and deduct the messaging fee to fee vault.
-        uint256 _fee = IL1MessageQueue(_messageQueue).estimateCrossDomainMessageFee(_newGasLimit);
-
-        // charge relayer fee
-        require(msg.value >= _fee, "Insufficient msg.value for fee");
-        if (_fee > 0) {
-            (bool _success, ) = feeVault.call{value: _fee}("");
-            require(_success, "Failed to deduct the fee");
-        }
-
-        // enqueue the new transaction
-        IL1MessageQueue(_messageQueue).appendCrossDomainMessage(_counterpart, _newGasLimit, _xDomainCalldata);
-
-        // refund fee to `_refundAddress`
-        unchecked {
-            uint256 _refund = msg.value - _fee;
-            if (_refund > 0) {
-                (bool _success, ) = _refundAddress.call{value: _refund}("");
-                require(_success, "Failed to refund the fee");
-            }
-        }
+        uint32 _oldGasLimit,
+        uint32 _newGasLimit
+    ) external override whenNotPaused {
+        // @todo
     }
 
     /************************
@@ -217,7 +216,12 @@ contract L1ScrollMessenger is PausableUpgradeable, ScrollMessengerBase, IL1Scrol
         bytes memory _xDomainCalldata = _encodeXDomainCalldata(msg.sender, _to, _value, _messageNonce, _message);
 
         // compute and deduct the messaging fee to fee vault.
-        uint256 _fee = IL1MessageQueue(_messageQueue).estimateCrossDomainMessageFee(_gasLimit);
+        uint256 _fee = IL1MessageQueue(_messageQueue).estimateCrossDomainMessageFee(
+            address(this),
+            _counterpart,
+            _xDomainCalldata,
+            _gasLimit
+        );
         require(msg.value >= _fee + _value, "Insufficient msg.value");
         if (_fee > 0) {
             (bool _success, ) = feeVault.call{value: _fee}("");
@@ -236,7 +240,7 @@ contract L1ScrollMessenger is PausableUpgradeable, ScrollMessengerBase, IL1Scrol
 
         emit SentMessage(msg.sender, _to, _value, _messageNonce, _gasLimit, _message);
 
-        // refund fee to `_refundAddress`
+        // refund fee to tx.origin
         unchecked {
             uint256 _refund = msg.value - _fee - _value;
             if (_refund > 0) {
