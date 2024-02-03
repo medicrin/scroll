@@ -15,7 +15,7 @@ docker pull postgres
 make dev_docker
 ```
 
-## Testing Bridge & Coordinator |
+## Testing Bridge & Coordinator 
 
 ### For Non-Apple Silicon (M1/M2) Macs
 
